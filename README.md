@@ -1,8 +1,8 @@
 # Growth Eng MCP
 
-A framework that's used internally at FLORA to power autonomous growth engineers that plan, build, and run experiments for your app 24/7.
-
 Growth Eng MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server built with [FastMCP](https://github.com/punkpeye/fastmcp) and [Bun](https://bun.sh). It exposes tools, prompts, and resources that let an AI agent act as a growth engineer: ideating, shipping, and measuring experiments without human intervention.
+
+Based on [mcpdotdirect/template-mcp-server](https://github.com/mcpdotdirect/template-mcp-server).
 
 ## Install the MCP
 
@@ -79,6 +79,18 @@ By default it listens on `http://localhost:3001` with the SSE endpoint at `/sse`
 PORT=8080 bun run start:http
 ```
 
+## The knowledge base
+
+The framework operates out of a `.growth-eng/` directory in your repository:
+
+```
+.growth-eng/
+├── _template_.md   # the canonical experiment template
+└── _images/        # control/variant screenshots and designs
+```
+
+Run the `init` prompt to bootstrap it. The MCP returns step-by-step instructions and the template verbatim; the agent then creates the files, and never overwrites an existing `_template_.md`. Experiments are added later as `.growth-eng/<feature>/<experiment>.md`, each a copy of the template, with screenshots and designs stored in `.growth-eng/_images/<experiment>/`.
+
 ## Development
 
 ```bash
@@ -101,6 +113,7 @@ src/
     ├── tools.ts          # Tool definitions
     ├── prompts.ts        # Prompt definitions
     ├── resources.ts      # Resource definitions
+    ├── utils.ts          # Shared string utilities
     └── services/         # Business logic behind the tools
 ```
 
