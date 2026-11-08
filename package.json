@@ -15,6 +15,11 @@
     "dev": "bun --watch src/index.ts",
     "start:http": "bun run src/server/http-server.ts",
     "dev:http": "bun --watch src/server/http-server.ts",
+    "inspector": "npx @modelcontextprotocol/inspector bun run ./src/index.ts",
+    "test": "bun test",
+    "test:tools": "bun test tests/tools.test.ts",
+    "test:agent": "bun test tests/agent.test.ts",
+    "test:evals": "bun test tests/evals.test.ts",
     "lint": "oxlint ./src",
     "lint:fix": "oxlint ./src --fix",
     "fmt": "oxfmt ./src",
@@ -22,6 +27,8 @@
     "knip": "knip"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "4.0.91",
+    "@mcpjam/sdk": "^10.3.0",
     "@types/bun": "latest",
     "@types/cors": "^2.8.17",
     "@types/node": "^20.19.43",
@@ -40,5 +47,8 @@
     "fastmcp": "^4.24.5",
     "sury": "^10.0.4",
     "zod": "^4.6.7"
+  },
+  "patchedDependencies": {
+    "@mcpjam/sdk@10.3.0": "patches/@mcpjam%2Fsdk@10.3.0.patch"
   }
 }

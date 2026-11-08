@@ -91,6 +91,24 @@ The framework operates out of a `.growth-eng/` directory in your repository:
 
 Run the `init` prompt to bootstrap it. The MCP returns step-by-step instructions and the template verbatim; the agent then creates the files, and never overwrites an existing `_template_.md`. Experiments are added later as `.growth-eng/<feature>/<experiment>.md`, each a copy of the template, with screenshots and designs stored in `.growth-eng/_images/<experiment>/`.
 
+## Testing
+
+Tests use [`@mcpjam/sdk`](https://docs.mcpjam.com/sdk/quickstart) and Bun's built-in test runner, with the MCP server booted over stdio by the test harness (`tests/harness.ts`).
+
+```bash
+bun test            # everything: direct tool tests + LLM agent tests + evals
+bun test tests/tools.test.ts         # direct tool/prompt/resource execution, no LLM needed
+bun test tests/agent.test.ts         # LLM tool-selection tests
+bun test tests/init-prompt.test.ts   # user-selected init prompt is rendered by the client and drives the agent to create .growth-eng/ and write _template_.md in a sandbox
+bun test tests/evals.test.ts         # statistical eval suite
+```
+
+Configuration lives in `.env` (see `.env.example`):
+
+- `OPENROUTER_API_KEY` — required by the LLM tests. The agent runs `openai/gpt-6-luna` on OpenRouter with medium reasoning; tests that need the LLM skip when the key is absent.
+
+Everything runs locally: no MCPJam account or key is involved. The statistical evals run N iterations per case (10 by default, override with `EVAL_ITERATIONS`) and gate on 90% aggregate tool-routing accuracy.
+
 ## Development
 
 ```bash
