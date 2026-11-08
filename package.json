@@ -1,0 +1,43 @@
+{
+  "name": "growth-eng",
+  "module": "src/index.ts",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) Server for autonomous Growth Engineering",
+  "bin": {
+    "growth-eng": "src/index.ts"
+  },
+  "private": false,
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir build --target node",
+    "build:http": "bun build src/server/http-server.ts --outdir build --target node",
+    "dev": "bun --watch src/index.ts",
+    "start:http": "bun run src/server/http-server.ts",
+    "dev:http": "bun --watch src/server/http-server.ts",
+    "lint": "oxlint ./src",
+    "lint:fix": "oxlint ./src --fix",
+    "fmt": "oxfmt ./src",
+    "fmt:check": "oxfmt ./src --check",
+    "knip": "knip"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.19.43",
+    "knip": "^6.44.2",
+    "oxfmt": "^0.77.0",
+    "oxlint": "^1.92.0",
+    "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "@valibot/to-json-schema": "^1.0.0",
+    "effect": "^3.14.4",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "fastmcp": "^4.24.5",
+    "zod": "^4.6.7"
+  }
+}
