@@ -12,6 +12,9 @@ const GROWTH_ENG_DIR = ".growth-eng";
 /** Name of the canonical experiment template file inside the knowledge base. */
 const TEMPLATE_FILE = "_template_.md";
 
+/** Name of the lint rules file inside the knowledge base. */
+export const LINT_RULES_FILE = "lint-rules.json";
+
 /** Values allowed in an experiment's custom fields. */
 type CustomValue = string | number | boolean;
 
@@ -84,6 +87,23 @@ export function requireTemplatePath(): string {
     );
   }
   return template;
+}
+
+/**
+ * The lint rules file must already exist, or the error tells the agent to run
+ * the 'init' prompt.
+ *
+ * @returns The absolute path of .growth-eng/lint-rules.json
+ */
+export function requireLintRulesPath(): string {
+  const rules = join(knowledgeBaseRoot(), LINT_RULES_FILE);
+  if (!existsSync(rules)) {
+    throw new Error(
+      `.growth-eng/${LINT_RULES_FILE} not found. Run the 'init' prompt to ` +
+        "create it (existing files are never overwritten).",
+    );
+  }
+  return rules;
 }
 
 /**

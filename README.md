@@ -86,12 +86,13 @@ The framework operates out of a `.growth-eng/` directory in your repository:
 ```
 .growth-eng/
 ├── _template_.md   # the canonical experiment template
+├── lint-rules.json # the rules experiments are linted against
 ├── _images/        # control/variant screenshots and designs
 └── <feature>/      # one folder per feature, e.g. onboarding/
     └── <experiment>.md
 ```
 
-Run the `init` prompt to bootstrap it. The MCP returns step-by-step instructions and the template verbatim; the agent then creates the files, and never overwrites an existing `_template_.md`.
+Run the `init` prompt to bootstrap it. The MCP returns step-by-step instructions with the template and the default lint rules verbatim; the agent then creates the files, and never overwrites an existing `_template_.md` or `lint-rules.json`.
 
 This is the canonical template the init prompt writes to `_template_.md` (the server, not this README, is the source of truth — it lives in `src/core/services/knowledge-base-service.ts`):
 
@@ -151,19 +152,52 @@ Every experiment is a copy of this template: `create_experiment` fills in the fr
 
 ## Tools
 
-The server's tools cover the writes the harness can't do safely on its own; for reading and listing, the agent uses its own file tools (`read_file`, `ls`, `grep`) directly against `.growth-eng/`:
+The server's tools cover the writes the harness can't do safely on its own, plus `lint_experiments`, which hands the agent the repository's lint rules and the scoring prompt; for reading and listing, the agent uses its own file tools (`read_file`, `ls`, `grep`) directly against `.growth-eng/`:
 
 | Tool | What it does |
 |---|---|
 | `create_feature_folder` | Creates `.growth-eng/<feature>/` |
 | `create_experiment` | Copies `_template_.md` into a feature folder, fills the frontmatter from the arguments, and returns the file path for the agent to fill in |
 | `update_experiment` | Patches experiment frontmatter (the body is untouched, the file is never renamed) |
+| `lint_experiments` | Returns the lint rules from `.growth-eng/lint-rules.json` plus the prompt to read every experiment, judge each rule, and score it |
 
 `create_experiment` names the file after the feature flag key: `<feature_flag_key>.md`, or `<feature_flag_key>-MM-DD-YYYY.md` when the key already exists in the feature and a `start_date` is passed. Its frontmatter covers title, flag key, dates, status (`draft` / `running` / `ended`), conclusion, winning variant, and a free-form `custom` map.
 
-Every tool checks its preconditions and, when one is missing, returns an error that tells the agent the next step: run the `init` prompt when the knowledge base or template is missing, or call `create_feature_folder` when the feature folder does not exist yet.
+Every tool checks its preconditions and, when one is missing, returns an error that tells the agent the next step: run the `init` prompt when the knowledge base, template, or lint rules are missing, or call `create_feature_folder` when the feature folder does not exist yet. `lint_experiments` also rejects a rules file that isn't valid JSON or holds a rule without a `lint_rule` description and a `severity` of `error` or `warning`, naming the offending rule.
 
 Screenshots and designs live in `.growth-eng/_images/<experiment>/` (for example control.png and variant-a.png), named after the experiment doc.
+
+## Linting experiments
+
+`lint_experiments` scores every experiment doc against the rules in `.growth-eng/lint-rules.json`. It returns the loaded rules (with a count by severity) and the scoring prompt; the agent then reads every experiment at `.growth-eng/**/*.md` (excluding `_template_.md`) with its own file tools, judges each rule per experiment, and reports:
+
+- **Per experiment**: `Experiment Quality % = (rules followed / total rules) * 100`, with each broken rule named (id, severity, why it breaks) and what to change to follow it.
+- **Overall**: the average of the per-experiment scores.
+
+Every rule counts equally, whatever its severity: severity is shown in the breakdown but doesn't weight the score.
+
+### Setting up your own rules
+
+The rules file is a JSON object keyed by rule id. Each rule carries a `severity` (`error` or `warning`), the `lint_rule` the judge applies, and ideally a `bad_example` / `good_example` pair that shows the judge exactly where the line sits:
+
+```json
+{
+  "hypothesis/is-falsifiable": {
+    "severity": "error",
+    "lint_rule": "The hypothesis must predict a specific observable outcome, so that a result could prove it wrong.",
+    "bad_example": "The new setup checklist will increase activation.",
+    "good_example": "Showing the setup checklist during signup will increase MCP installations amongst new users."
+  },
+  "team/has-an-owner": {
+    "severity": "warning",
+    "lint_rule": "The spec must name the team that owns the experiment.",
+    "bad_example": "No owner is named anywhere in the spec.",
+    "good_example": "The growth core team owns this experiment."
+  }
+}
+```
+
+To set up your own rules, edit `.growth-eng/lint-rules.json` in your repository: add, edit, or remove rules, and commit the file alongside the rest of the knowledge base. Re-running the `init` prompt never overwrites it. To restore the default ruleset (24 rules: 19 error, 5 warning, covering hypothesis, metrics, guardrails, variants, audience, randomization, power, duration, analysis, decision, and rollout), delete the file and run the `init` prompt again.
 
 ## Testing
 

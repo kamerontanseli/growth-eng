@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { KnowledgeBaseService } from "../src/core/services/knowledge-base-service.js";
+import { LintService } from "../src/core/services/lint-service.js";
 import {
   SERVER_ID,
   createAgent,
@@ -54,6 +55,11 @@ const CASES = [
       'ended with conclusion "won".',
     tool: "update_experiment",
   },
+  {
+    id: "lint-experiments-routing",
+    prompt: "Lint the experiments in the .growth-eng/ knowledge base.",
+    tool: "lint_experiments",
+  },
 ] as const;
 
 let manager: MCPClientManager;
@@ -73,6 +79,10 @@ describe.skipIf(!hasOpenRouterKey())(
         join(sandbox, ".growth-eng", "_template_.md"),
         KnowledgeBaseService.getExperimentTemplate(),
       );
+      await writeFile(
+        join(sandbox, ".growth-eng", "lint-rules.json"),
+        LintService.getDefaultRules(),
+      );
       await mkdir(join(sandbox, ".growth-eng", "onboarding"));
       manager = await startServerIn(sandbox);
       await manager.executeTool(SERVER_ID, "create_experiment", {
@@ -89,7 +99,7 @@ describe.skipIf(!hasOpenRouterKey())(
     });
 
     it(
-      `routes feature folder and experiment calls at >= ${(ACCURACY_THRESHOLD * 100).toFixed(0)}% over ${ITERATIONS} iterations each`,
+      `routes feature folder, experiment, and lint calls at >= ${(ACCURACY_THRESHOLD * 100).toFixed(0)}% over ${ITERATIONS} iterations each`,
       async () => {
         const perCase: Record<string, { passed: number; total: number }> = {};
 

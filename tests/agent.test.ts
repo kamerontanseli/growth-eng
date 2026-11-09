@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { KnowledgeBaseService } from "../src/core/services/knowledge-base-service.js";
+import { LintService } from "../src/core/services/lint-service.js";
 import {
   MODEL,
   REASONING_EFFORT,
@@ -15,7 +16,12 @@ import {
 } from "./harness";
 
 /** The full tool surface of the server. */
-const TOOL_NAMES = ["create_experiment", "create_feature_folder", "update_experiment"];
+const TOOL_NAMES = [
+  "create_experiment",
+  "create_feature_folder",
+  "lint_experiments",
+  "update_experiment",
+];
 
 let manager: MCPClientManager;
 let agent: HostRunner;
@@ -33,6 +39,10 @@ describe.skipIf(!hasOpenRouterKey())(
       await writeFile(
         join(sandbox, ".growth-eng", "_template_.md"),
         KnowledgeBaseService.getExperimentTemplate(),
+      );
+      await writeFile(
+        join(sandbox, ".growth-eng", "lint-rules.json"),
+        LintService.getDefaultRules(),
       );
       await mkdir(join(sandbox, ".growth-eng", "onboarding"));
       manager = await startServerIn(sandbox);
@@ -90,6 +100,15 @@ describe.skipIf(!hasOpenRouterKey())(
         status: "ended",
         conclusion: "won",
       });
+    }, 120_000);
+
+    it("calls lint_experiments when asked to lint the experiments", async () => {
+      const result = await agent.run(
+        "Lint the experiments in the .growth-eng/ knowledge base.",
+      );
+
+      expect(result.hasError()).toBe(false);
+      expect(result.hasToolCall("lint_experiments")).toBe(true);
     }, 120_000);
 
     it("does not call tools for an unrelated question", async () => {

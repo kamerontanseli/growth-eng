@@ -6,13 +6,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { KnowledgeBaseService } from "../src/core/services/knowledge-base-service.js";
+import { LintService } from "../src/core/services/lint-service.js";
 import { SERVER_ID, promptText, startServerIn, stopServer } from "./harness";
 
 /** A tool result in the shape assertCallToolResult narrows to. */
 type ToolResult = ReturnType<typeof assertCallToolResult>;
 
 /** The full tool surface of the server. */
-const TOOL_NAMES = ["create_experiment", "create_feature_folder", "update_experiment"];
+const TOOL_NAMES = [
+  "create_experiment",
+  "create_feature_folder",
+  "lint_experiments",
+  "update_experiment",
+];
 
 /** Execute a tool and return its result, whatever it is. */
 async function callTool(
@@ -49,6 +55,10 @@ async function bootstrapKnowledgeBase(root: string): Promise<void> {
     join(root, ".growth-eng", "_template_.md"),
     KnowledgeBaseService.getExperimentTemplate(),
   );
+  await writeFile(
+    join(root, ".growth-eng", "lint-rules.json"),
+    LintService.getDefaultRules(),
+  );
 }
 
 /** Parse the frontmatter of a markdown document as YAML. */
@@ -83,7 +93,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
     await rm(sandbox, { recursive: true, force: true });
   });
 
-  it("exposes the feature folder and experiment tools", async () => {
+  it("exposes the feature folder, experiment, and lint tools", async () => {
     const { tools } = await manager.listTools(SERVER_ID);
     expect(tools.map((tool) => tool.name).sort()).toEqual(TOOL_NAMES);
   });
@@ -98,7 +108,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
     expect(resources).toEqual([]);
   });
 
-  it("init prompt embeds the experiment template verbatim", async () => {
+  it("init prompt embeds the experiment template and lint rules verbatim", async () => {
     const prompt = await manager.getPrompt(SERVER_ID, { name: "init" });
     const text = promptText(prompt);
 
@@ -111,6 +121,9 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
     expect(text).toContain(
       KnowledgeBaseService.getExperimentTemplate().replace(/\n+$/, ""),
     );
+    // The default lint rules ride in the prompt verbatim too, for the same
+    // reason: the rules file must land byte-for-byte.
+    expect(text).toContain(LintService.getDefaultRules().replace(/\n+$/, ""));
   });
 
   describe("feature folders", () => {
@@ -339,6 +352,97 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
       });
     });
   });
+
+  describe("lint_experiments", () => {
+    const rulesPath = () => join(sandbox, ".growth-eng", "lint-rules.json");
+
+    it("returns the rules and the scoring prompt from an initialized knowledge base", async () => {
+      const result = await callTool(manager, "lint_experiments");
+      expect(result.isError).not.toBe(true);
+      const text = textOf(result);
+      expect(text).toContain(
+        "Loaded 24 lint rules from .growth-eng/lint-rules.json (19 error, 5 warning)",
+      );
+      // The rules ride in the result verbatim, so the calling LLM judges
+      // against exactly what the repository holds.
+      expect(text).toContain(LintService.getDefaultRules().replace(/\n+$/, ""));
+      // The scoring prompt: the formula, the glob, the template exclusion.
+      expect(text).toContain(
+        "Experiment Quality % = (rules followed / total rules) * 100",
+      );
+      expect(text).toContain(".growth-eng/**/*.md");
+      expect(text).toContain("_template_.md");
+      expect(text).toContain("nothing to lint");
+    });
+
+    it("returns customized rules from the knowledge base, not the defaults", async () => {
+      const custom = {
+        "team/has-a-custom-rule": {
+          severity: "warning",
+          lint_rule: "The spec must name the team that owns the experiment.",
+          bad_example: "No owner is named anywhere in the spec.",
+          good_example: "The growth core team owns this experiment.",
+        },
+      };
+      await writeFile(rulesPath(), JSON.stringify(custom, null, 2));
+      try {
+        const result = await callTool(manager, "lint_experiments");
+        const text = textOf(result);
+        expect(text).toContain(
+          "Loaded 1 lint rules from .growth-eng/lint-rules.json (0 error, 1 warning)",
+        );
+        expect(text).toContain("team/has-a-custom-rule");
+        expect(text).toContain(
+          "The spec must name the team that owns the experiment.",
+        );
+        expect(text).not.toContain("hypothesis/is-falsifiable");
+      } finally {
+        await writeFile(rulesPath(), LintService.getDefaultRules());
+      }
+    });
+
+    it("tells the agent to run the init prompt when the rules file is missing", async () => {
+      await rm(rulesPath());
+      try {
+        const text = await expectToolError(manager, "lint_experiments");
+        expect(text).toContain(".growth-eng/lint-rules.json");
+        expect(text).toContain("init");
+      } finally {
+        await writeFile(rulesPath(), LintService.getDefaultRules());
+      }
+    });
+
+    it("rejects malformed JSON, naming the file and the fix", async () => {
+      await writeFile(rulesPath(), "{ not json");
+      try {
+        const text = await expectToolError(manager, "lint_experiments");
+        expect(text).toContain(".growth-eng/lint-rules.json");
+        expect(text).toContain("not valid JSON");
+        expect(text).toContain("init");
+      } finally {
+        await writeFile(rulesPath(), LintService.getDefaultRules());
+      }
+    });
+
+    it("rejects an invalid rule shape, naming the offending rule", async () => {
+      await writeFile(
+        rulesPath(),
+        JSON.stringify({
+          "broken-rule": { severity: "error" },
+          "odd-severity": { severity: "high", lint_rule: "A rule." },
+        }),
+      );
+      try {
+        const text = await expectToolError(manager, "lint_experiments");
+        // The first invalid rule in the file fails the parse, so the error
+        // names that one.
+        expect(text).toContain("broken-rule");
+        expect(text).toContain("is missing its lint_rule description");
+      } finally {
+        await writeFile(rulesPath(), LintService.getDefaultRules());
+      }
+    });
+  });
 });
 
 describe("tools against an uninitialized knowledge base", () => {
@@ -368,6 +472,11 @@ describe("tools against an uninitialized knowledge base", () => {
       title: "Too early",
       feature_flag_key: "too-early",
     });
+    expect(text).toContain("init");
+  });
+
+  it("lint_experiments tells the agent to run the init prompt", async () => {
+    const text = await expectToolError(manager, "lint_experiments");
     expect(text).toContain("init");
   });
 });

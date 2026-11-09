@@ -123,4 +123,17 @@ export function registerTools(server: FastMCP) {
       return services.ExperimentService.update(feature, name, patch);
     },
   });
+
+  // Linting
+  server.addTool({
+    name: "lint_experiments",
+    description: lines(
+      "Return the lint rules from .growth-eng/lint-rules.json together with the prompt to lint the knowledge base:",
+      "read every experiment at .growth-eng/**/*.md, judge each rule per experiment, and score each one",
+      "Experiment Quality % = (rules followed / total rules) * 100.",
+      "Requires the knowledge base to be initialized ('init' prompt).",
+    ),
+    parameters: z.object({}),
+    execute: async () => services.LintService.lint(),
+  });
 }
