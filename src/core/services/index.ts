@@ -1,3 +1,4 @@
 // Export all services
-export * from "./greeting-service.js";
+export * from "./experiment-service.js";
+export * from "./feature-folder-service.js";
 export * from "./knowledge-base-service.js";

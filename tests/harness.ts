@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { HostRunner, MCPClientManager } from "@mcpjam/sdk";
+import { join } from "node:path";
 
 /**
  * Server id used in the MCPClientManager config for the growth-eng stdio server.
@@ -91,17 +92,37 @@ function createOpenRouterModel(apiKey: string) {
 }
 
 /**
- * Boot the growth-eng MCP server (src/index.ts) over stdio.
+ * Absolute path to the stdio server entrypoint. The server resolves the
+ * .growth-eng/ knowledge base against its working directory, so tests can
+ * boot it rooted anywhere.
  */
-export async function startServer(): Promise<MCPClientManager> {
+const SERVER_ENTRY = join(import.meta.dir, "..", "src", "index.ts");
+
+/**
+ * Boot the growth-eng MCP server (src/index.ts) over stdio, rooted at cwd.
+ * The server's tools operate on .growth-eng/ under its working directory,
+ * so tests pass a throwaway sandbox instead of the repository itself.
+ *
+ * @param cwd Working directory for the server process. Defaults to the
+ *   current directory.
+ */
+export async function startServerIn(cwd?: string): Promise<MCPClientManager> {
   const manager = new MCPClientManager({
     [SERVER_ID]: {
       command: "bun",
-      args: ["run", "src/index.ts"],
+      args: ["run", SERVER_ENTRY],
+      ...(cwd ? { cwd } : {}),
     },
   });
   await manager.connectToServer(SERVER_ID);
   return manager;
+}
+
+/**
+ * Boot the growth-eng MCP server (src/index.ts) over stdio.
+ */
+export async function startServer(): Promise<MCPClientManager> {
+  return startServerIn();
 }
 
 /**

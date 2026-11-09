@@ -1,5 +1,4 @@
 import { FastMCP } from "fastmcp";
-import { registerResources } from "../core/resources.js";
 import { registerTools } from "../core/tools.js";
 import { registerPrompts } from "../core/prompts.js";
 
@@ -12,8 +11,7 @@ async function startServer() {
       version: "1.0.0",
     });
 
-    // Register all resources, tools, and prompts
-    registerResources(server);
+    // Register all tools and prompts
     registerTools(server);
     registerPrompts(server);
 
