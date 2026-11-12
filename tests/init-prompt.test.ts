@@ -161,53 +161,42 @@ describe.skipIf(!hasOpenRouterKey())("init prompt end-to-end", () => {
       await rm(sandbox, { recursive: true, force: true });
     });
 
-    it(
-      "has the user-selected init prompt drive the agent to create .growth-eng/ and write _template_.md and lint-rules.json",
-      async () => {
-        // The user selected the init prompt (e.g. `/init`). The client sends
-        // prompts/get and receives structured messages ready to send to the model.
-        const prompt = await manager.getPrompt(SERVER_ID, { name: "init" });
-        const messages = (
-          prompt as { messages: Array<{ role: string }> }
-        ).messages;
-        expect(messages.length).toBeGreaterThan(0);
-        expect(messages[0].role).toBe("user");
+    it("has the user-selected init prompt drive the agent to create .growth-eng/ and write _template_.md and lint-rules.json", async () => {
+      // The user selected the init prompt (e.g. `/init`). The client sends
+      // prompts/get and receives structured messages ready to send to the model.
+      const prompt = await manager.getPrompt(SERVER_ID, { name: "init" });
+      const messages = (prompt as { messages: Array<{ role: string }> }).messages;
+      expect(messages.length).toBeGreaterThan(0);
+      expect(messages[0].role).toBe("user");
 
-        // The client hands the rendered messages to the agent unchanged; the
-        // model then acts on them with its file tools.
-        const result = await agent.run(promptText(prompt), {
-          timeoutMs: RUN_TIMEOUT_MS,
-        });
-        expect(result.hasError()).toBe(false);
+      // The client hands the rendered messages to the agent unchanged; the
+      // model then acts on them with its file tools.
+      const result = await agent.run(promptText(prompt), {
+        timeoutMs: RUN_TIMEOUT_MS,
+      });
+      expect(result.hasError()).toBe(false);
 
-        // The agent made the .growth-eng/ directory.
-        const dir = await stat(join(sandbox, ".growth-eng"));
-        expect(dir.isDirectory()).toBe(true);
+      // The agent made the .growth-eng/ directory and its subdirectories.
+      const dir = await stat(join(sandbox, ".growth-eng"));
+      expect(dir.isDirectory()).toBe(true);
+      expect((await stat(join(sandbox, ".growth-eng", "images"))).isDirectory()).toBe(true);
+      expect((await stat(join(sandbox, ".growth-eng", "ideas", "rejected"))).isDirectory()).toBe(
+        true,
+      );
+      expect((await stat(join(sandbox, ".growth-eng", "specs"))).isDirectory()).toBe(true);
 
-        // And wrote _template_.md inside it, with the template content verbatim.
-        const written = await readFile(
-          join(sandbox, ".growth-eng", "_template_.md"),
-          "utf8",
-        );
-        const expected = KnowledgeBaseService.getExperimentTemplate();
-        expect(withoutTrailingNewlines(written)).toBe(
-          withoutTrailingNewlines(expected),
-        );
+      // And wrote _template_.md inside it, with the template content verbatim.
+      const written = await readFile(join(sandbox, ".growth-eng", "_template_.md"), "utf8");
+      const expected = KnowledgeBaseService.getExperimentTemplate();
+      expect(withoutTrailingNewlines(written)).toBe(withoutTrailingNewlines(expected));
 
-        // And wrote lint-rules.json with the default rules. The rules are
-        // compared semantically: a model copying a long JSON block preserves
-        // the ruleset, but not necessarily the byte layout (the blank lines
-        // between rule groups). The prompt-contract tests pin verbatim.
-        const writtenRules = await readFile(
-          join(sandbox, ".growth-eng", "lint-rules.json"),
-          "utf8",
-        );
-        expect(JSON.parse(writtenRules)).toEqual(
-          JSON.parse(LintService.getDefaultRules()),
-        );
-      },
-      300_000,
-    );
+      // And wrote lint-rules.json with the default rules. The rules are
+      // compared semantically: a model copying a long JSON block preserves
+      // the ruleset, but not necessarily the byte layout (the blank lines
+      // between rule groups). The prompt-contract tests pin verbatim.
+      const writtenRules = await readFile(join(sandbox, ".growth-eng", "lint-rules.json"), "utf8");
+      expect(JSON.parse(writtenRules)).toEqual(JSON.parse(LintService.getDefaultRules()));
+    }, 300_000);
   });
 
   describe("knowledge base initialized before lint rules existed", () => {
@@ -219,8 +208,8 @@ describe.skipIf(!hasOpenRouterKey())("init prompt end-to-end", () => {
       sandbox = await mkdtemp(join(tmpdir(), "growth-eng-partial-"));
       // A knowledge base from before the lint rules file existed: the
       // template is there, the rules file is not.
-      await mkdir(join(sandbox, ".growth-eng", "_images"), { recursive: true });
-      await writeFile(join(sandbox, ".growth-eng", "_images", ".gitkeep"), "");
+      await mkdir(join(sandbox, ".growth-eng", "images"), { recursive: true });
+      await writeFile(join(sandbox, ".growth-eng", "images", ".gitkeep"), "");
       await writeFile(
         join(sandbox, ".growth-eng", "_template_.md"),
         KnowledgeBaseService.getExperimentTemplate(),
@@ -238,34 +227,22 @@ describe.skipIf(!hasOpenRouterKey())("init prompt end-to-end", () => {
       await rm(sandbox, { recursive: true, force: true });
     });
 
-    it(
-      "drives the agent to create only the missing lint-rules.json and leave the template untouched",
-      async () => {
-        const prompt = await manager.getPrompt(SERVER_ID, { name: "init" });
-        const result = await agent.run(promptText(prompt), {
-          timeoutMs: RUN_TIMEOUT_MS,
-        });
-        expect(result.hasError()).toBe(false);
+    it("drives the agent to create only the missing lint-rules.json and leave the template untouched", async () => {
+      const prompt = await manager.getPrompt(SERVER_ID, { name: "init" });
+      const result = await agent.run(promptText(prompt), {
+        timeoutMs: RUN_TIMEOUT_MS,
+      });
+      expect(result.hasError()).toBe(false);
 
-        // The missing rules file is created with the default rules.
-        const writtenRules = await readFile(
-          join(sandbox, ".growth-eng", "lint-rules.json"),
-          "utf8",
-        );
-        expect(JSON.parse(writtenRules)).toEqual(
-          JSON.parse(LintService.getDefaultRules()),
-        );
+      // The missing rules file is created with the default rules.
+      const writtenRules = await readFile(join(sandbox, ".growth-eng", "lint-rules.json"), "utf8");
+      expect(JSON.parse(writtenRules)).toEqual(JSON.parse(LintService.getDefaultRules()));
 
-        // The existing template is left exactly as it was.
-        const template = await readFile(
-          join(sandbox, ".growth-eng", "_template_.md"),
-          "utf8",
-        );
-        expect(withoutTrailingNewlines(template)).toBe(
-          withoutTrailingNewlines(KnowledgeBaseService.getExperimentTemplate()),
-        );
-      },
-      300_000,
-    );
+      // The existing template is left exactly as it was.
+      const template = await readFile(join(sandbox, ".growth-eng", "_template_.md"), "utf8");
+      expect(withoutTrailingNewlines(template)).toBe(
+        withoutTrailingNewlines(KnowledgeBaseService.getExperimentTemplate()),
+      );
+    }, 300_000);
   });
 });

@@ -253,7 +253,7 @@ function parseLintRules(raw: string): Map<string, LintRule> {
  * severity: the score is the share of rules an experiment follows.
  */
 const LINT_PROMPT = lines(
-  "1. Read every experiment document at .growth-eng/**/*.md with your own file tools, excluding .growth-eng/_template_.md.",
+  "1. Read every experiment document at .growth-eng/specs/**/*.md (or .growth-eng/**/*.md, excluding .growth-eng/_template_.md and drafts in .growth-eng/ideas/) with your own file tools.",
   "2. For each experiment, judge whether it follows each of the rules above. A rule is either followed or broken; use its bad_example and good_example to decide, and judge the whole document, not only the section a rule seems to name.",
   "3. Score each experiment: Experiment Quality % = (rules followed / total rules) * 100. Every rule counts equally, whatever its severity.",
   "4. Report, for each experiment: the score, every broken rule (id, severity, and why it breaks), and what to change to follow it.",

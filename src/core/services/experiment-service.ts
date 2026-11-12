@@ -52,10 +52,10 @@ interface ExperimentLocation {
  */
 function locateFeature(root: string, feature: string): { featureSlug: string; featureDir: string } {
   const featureSlug = slugifyOrThrow("Feature", feature);
-  const featureDir = join(root, featureSlug);
+  const featureDir = join(root, "specs", featureSlug);
   if (!existsSync(featureDir)) {
     throw new Error(
-      `Feature folder '.growth-eng/${featureSlug}' does not exist. ` +
+      `Feature folder '.growth-eng/specs/${featureSlug}' does not exist. ` +
         `Create it first with the create_feature_folder tool: ` +
         `{ "name": "${featureSlug}" }.`,
     );
@@ -79,7 +79,9 @@ async function locateExperiment(
     const found = (await readdir(featureDir)).filter((file) => file.endsWith(".md")).sort();
     const foundNote =
       found.length > 0 ? `Found: ${found.join(", ")}.` : "The folder has no experiments yet.";
-    throw new Error(`No experiment named "${slug}.md" in .growth-eng/${featureSlug}. ` + foundNote);
+    throw new Error(
+      `No experiment named "${slug}.md" in .growth-eng/specs/${featureSlug}. ` + foundNote,
+    );
   }
   return { featureSlug, featureDir, slug, path };
 }
@@ -91,7 +93,7 @@ function filenameDate(iso: string): string {
 }
 
 /**
- * A service for the experiment documents (`.growth-eng/<feature>/<experiment>.md`)
+ * A service for the experiment documents (`.growth-eng/specs/<feature>/<experiment>.md`)
  * created from the canonical template.
  */
 export class ExperimentService {
@@ -117,7 +119,7 @@ export class ExperimentService {
       if (!args.start_date) {
         throw new Error(
           `An experiment with feature flag key "${args.feature_flag_key}" ` +
-            `already exists in .growth-eng/${featureSlug} (${filename}). ` +
+            `already exists in .growth-eng/specs/${featureSlug} (${filename}). ` +
             `Pass a start_date (YYYY-MM-DD) to create a dated variant ` +
             `(${keySlug}-MM-DD-YYYY.md), or use a different feature_flag_key.`,
         );
@@ -127,7 +129,7 @@ export class ExperimentService {
         throw new Error(
           `An experiment with feature flag key "${args.feature_flag_key}" ` +
             `and start date ${args.start_date} already exists in ` +
-            `.growth-eng/${featureSlug} (${filename}). Use a different ` +
+            `.growth-eng/specs/${featureSlug} (${filename}). Use a different ` +
             `feature_flag_key or start_date.`,
         );
       }
@@ -151,7 +153,7 @@ export class ExperimentService {
     await writeFile(join(featureDir, filename), content);
 
     return lines(
-      `Created experiment: .growth-eng/${featureSlug}/${filename}`,
+      `Created experiment: .growth-eng/specs/${featureSlug}/${filename}`,
       "The frontmatter is filled in from your arguments. Now fill out the " +
         "markdown content: Hypothesis, Research, Control, Variants, Sample " +
         "size / MDE plan, Metrics, Results, Conclusion.",
@@ -179,7 +181,7 @@ export class ExperimentService {
     const updated = applyFrontmatterPatch(content, patch);
     await writeFile(location.path, updated);
     return lines(
-      `Updated experiment frontmatter: .growth-eng/${location.featureSlug}/${location.slug}.md`,
+      `Updated experiment frontmatter: .growth-eng/specs/${location.featureSlug}/${location.slug}.md`,
       "The markdown content below the frontmatter was left untouched, and " +
         "the file was not renamed.",
     );

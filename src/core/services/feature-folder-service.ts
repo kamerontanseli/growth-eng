@@ -5,7 +5,7 @@ import { lines } from "../utils.js";
 import { requireKnowledgeBase, slugifyOrThrow } from "./kb-utils.js";
 
 /**
- * A service for the feature folders (`.growth-eng/<feature>/`) that
+ * A service for the feature folders (`.growth-eng/specs/<feature>/`) that
  * experiments are filed under.
  */
 export class FeatureFolderService {
@@ -19,14 +19,14 @@ export class FeatureFolderService {
   public static async create(name: string): Promise<string> {
     const slug = slugifyOrThrow("Feature folder name", name);
     const root = requireKnowledgeBase();
-    const dir = join(root, slug);
+    const dir = join(root, "specs", slug);
     if (existsSync(dir)) {
-      throw new Error(`Feature folder '.growth-eng/${slug}' already exists.`);
+      throw new Error(`Feature folder '.growth-eng/specs/${slug}' already exists.`);
     }
-    await mkdir(dir);
+    await mkdir(dir, { recursive: true });
     return lines(
-      `Created feature folder: .growth-eng/${slug}`,
-      `Experiments for this feature live there as .growth-eng/${slug}/` +
+      `Created feature folder: .growth-eng/specs/${slug}`,
+      `Experiments for this feature live there as .growth-eng/specs/${slug}/` +
         "<experiment>.md — create them with the create_experiment tool.",
     );
   }

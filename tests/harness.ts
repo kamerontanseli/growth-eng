@@ -1,4 +1,3 @@
-import { createOpenAI } from "@ai-sdk/openai";
 import { HostRunner, MCPClientManager } from "@mcpjam/sdk";
 import { join } from "node:path";
 
@@ -8,30 +7,9 @@ import { join } from "node:path";
 export const SERVER_ID = "growth-eng";
 
 /**
- * The model the agent runs: openai/gpt-6-luna on OpenRouter.
- *
- * `HostRunner` only accepts `reasoningEffort` on its openai/anthropic/google
- * provider routes, so the model string uses the `openai` provider and
- * `createLanguageModel` below points it at OpenRouter.
+ * The model the agent runs: particle-ai/particle-1 on OpenRouter.
  */
-export const MODEL = "openai/gpt-6-luna";
-
-/**
- * The bare model id. `@ai-sdk/openai` keys its capability table off the bare
- * name (it knows "gpt-6-luna" and its supported reasoning efforts, including
- * "medium"), so the agent is constructed with this id.
- */
-const BARE_MODEL_ID = "gpt-6-luna";
-
-/**
- * OpenRouter's OpenAI-compatible endpoint.
- */
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-
-/**
- * Reasoning effort applied to every run. While set, it replaces temperature.
- */
-export const REASONING_EFFORT = "medium" as const;
+export const MODEL = "openrouter/particle-ai/particle-1";
 
 /**
  * Whether an OpenRouter key is available. LLM-backed tests skip without it;
@@ -50,45 +28,9 @@ export function promptText(prompt: unknown): string {
   };
   return messages
     .map((message) =>
-      typeof message.content === "string"
-        ? message.content
-        : (message.content?.text ?? ""),
+      typeof message.content === "string" ? message.content : (message.content?.text ?? ""),
     )
     .join("\n\n");
-}
-
-/**
- * Rewrites the request body's model id back to the OpenRouter form
- * ("gpt-6-luna" -> "openai/gpt-6-luna") before the request leaves.
- */
-async function rewriteModelId(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> {
-  if (typeof init?.body === "string") {
-    try {
-      const body = JSON.parse(init.body) as { model?: unknown };
-      if (body?.model === BARE_MODEL_ID) {
-        init = { ...init, body: JSON.stringify({ ...body, model: MODEL }) };
-      }
-    } catch {
-      // Not JSON; send the request through unchanged.
-    }
-  }
-  return fetch(input, init);
-}
-
-/**
- * Build the language model the HostRunner uses: the OpenAI provider pointed
- * at OpenRouter, with the bare model id `@ai-sdk/openai` recognizes.
- */
-function createOpenRouterModel(apiKey: string) {
-  const openai = createOpenAI({
-    apiKey,
-    baseURL: OPENROUTER_BASE_URL,
-    fetch: rewriteModelId,
-  });
-  return openai(BARE_MODEL_ID);
 }
 
 /**
@@ -158,8 +100,6 @@ export async function createAgent(
     tools: [...(await manager.getTools()), ...extraTools],
     model: MODEL,
     apiKey,
-    createLanguageModel: () => createOpenRouterModel(apiKey),
-    reasoningEffort: REASONING_EFFORT,
     mcpClientManager: manager,
   });
 }

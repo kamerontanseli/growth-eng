@@ -16,9 +16,14 @@ type ToolResult = ReturnType<typeof assertCallToolResult>;
 const TOOL_NAMES = [
   "create_experiment",
   "create_feature_folder",
+  "create_idea",
   "lint_experiments",
+  "reject_idea",
   "update_experiment",
 ];
+
+/** The full prompt surface of the server. */
+const PROMPT_NAMES = ["generate-experiment-idea", "hypothesis-tree", "init", "plan-experiment"];
 
 /** Execute a tool and return its result, whatever it is. */
 async function callTool(
@@ -31,9 +36,7 @@ async function callTool(
 
 /** The text content of a tool result. */
 function textOf(result: ToolResult): string {
-  return result.content
-    .map((block) => ("text" in block ? block.text : ""))
-    .join("\n");
+  return result.content.map((block) => ("text" in block ? block.text : "")).join("\n");
 }
 
 /** Execute a tool, assert it failed, and return its error text. */
@@ -49,26 +52,24 @@ async function expectToolError(
 
 /** Create an initialized knowledge base in the given directory. */
 async function bootstrapKnowledgeBase(root: string): Promise<void> {
-  await mkdir(join(root, ".growth-eng", "_images"), { recursive: true });
-  await writeFile(join(root, ".growth-eng", "_images", ".gitkeep"), "");
+  await mkdir(join(root, ".growth-eng", "images"), { recursive: true });
+  await mkdir(join(root, ".growth-eng", "ideas", "rejected"), { recursive: true });
+  await mkdir(join(root, ".growth-eng", "specs"), { recursive: true });
+  await writeFile(join(root, ".growth-eng", "images", ".gitkeep"), "");
+  await writeFile(join(root, ".growth-eng", "ideas", "rejected", ".gitkeep"), "");
+  await writeFile(join(root, ".growth-eng", "specs", ".gitkeep"), "");
   await writeFile(
     join(root, ".growth-eng", "_template_.md"),
     KnowledgeBaseService.getExperimentTemplate(),
   );
-  await writeFile(
-    join(root, ".growth-eng", "lint-rules.json"),
-    LintService.getDefaultRules(),
-  );
+  await writeFile(join(root, ".growth-eng", "lint-rules.json"), LintService.getDefaultRules());
 }
 
 /** Parse the frontmatter of a markdown document as YAML. */
 function parseFrontmatter(content: string): Record<string, unknown> {
   const lines = content.split("\n");
   const end = lines.indexOf("---", 1);
-  return Bun.YAML.parse(lines.slice(1, end).join("\n")) as Record<
-    string,
-    unknown
-  >;
+  return Bun.YAML.parse(lines.slice(1, end).join("\n")) as Record<string, unknown>;
 }
 
 /** The body of a document: everything after the closing frontmatter marker. */
@@ -93,14 +94,14 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
     await rm(sandbox, { recursive: true, force: true });
   });
 
-  it("exposes the feature folder, experiment, and lint tools", async () => {
+  it("exposes the feature folder, idea, experiment, and lint tools", async () => {
     const { tools } = await manager.listTools(SERVER_ID);
     expect(tools.map((tool) => tool.name).sort()).toEqual(TOOL_NAMES);
   });
 
-  it("exposes only the init prompt", async () => {
+  it("exposes the init and skill prompts", async () => {
     const { prompts } = await manager.listPrompts(SERVER_ID);
-    expect(prompts.map((prompt) => prompt.name)).toEqual(["init"]);
+    expect(prompts.map((prompt) => prompt.name).sort()).toEqual(PROMPT_NAMES);
   });
 
   it("exposes no resources", async () => {
@@ -112,29 +113,61 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
     const prompt = await manager.getPrompt(SERVER_ID, { name: "init" });
     const text = promptText(prompt);
 
-    expect(text).toContain(
-      "Initialize the growth-eng knowledge base in this repository",
-    );
+    expect(text).toContain("Initialize the growth-eng knowledge base in this repository");
+    expect(text).toContain(".growth-eng/images/");
+    expect(text).toContain(".growth-eng/ideas/rejected/");
+    expect(text).toContain(".growth-eng/specs/");
     // The template must ride in the prompt verbatim, so an agent following it
     // can write the file byte-for-byte. The canonical file ends with a newline
     // the fenced block does not carry.
-    expect(text).toContain(
-      KnowledgeBaseService.getExperimentTemplate().replace(/\n+$/, ""),
-    );
+    expect(text).toContain(KnowledgeBaseService.getExperimentTemplate().replace(/\n+$/, ""));
     // The default lint rules ride in the prompt verbatim too, for the same
     // reason: the rules file must land byte-for-byte.
     expect(text).toContain(LintService.getDefaultRules().replace(/\n+$/, ""));
   });
 
+  it("renders the skill prompts (generate-experiment-idea, plan-experiment, hypothesis-tree)", async () => {
+    const ideaPrompt = await manager.getPrompt(SERVER_ID, {
+      name: "generate-experiment-idea",
+      arguments: {
+        size: "s",
+        focus_area: "onboarding",
+        details: "Reduce signup drop-off",
+      },
+    });
+    const ideaText = promptText(ideaPrompt);
+    expect(ideaText).toContain("Requested test size: s");
+    expect(ideaText).toContain("Focus area: onboarding");
+    expect(ideaText).toContain("Reduce signup drop-off");
+    expect(ideaText).toContain(".growth-eng/ideas/");
+    expect(ideaText).toContain("rejected");
+
+    const planPrompt = await manager.getPrompt(SERVER_ID, {
+      name: "plan-experiment",
+      arguments: { idea_slug: "simplify-signup" },
+    });
+    const planText = promptText(planPrompt);
+    expect(planText).toContain(".growth-eng/ideas/simplify-signup.md");
+    expect(planText).toContain("create_experiment");
+
+    const treePrompt = await manager.getPrompt(SERVER_ID, {
+      name: "hypothesis-tree",
+    });
+    const treeText = promptText(treePrompt);
+    expect(treeText).toContain("green");
+    expect(treeText).toContain("red");
+    expect(treeText).toContain("grey");
+  });
+
   describe("feature folders", () => {
-    it("creates the folder and normalizes the name", async () => {
+    it("creates the folder under .growth-eng/specs/ and normalizes the name", async () => {
       const result = await callTool(manager, "create_feature_folder", {
         name: "Onboarding Flow",
       });
       expect(result.isError).toBeUndefined();
-      expect(textOf(result)).toContain(".growth-eng/onboarding-flow");
+      expect(textOf(result)).toContain(".growth-eng/specs/onboarding-flow");
       expect(
-        (await stat(join(sandbox, ".growth-eng", "onboarding-flow"))).isDirectory(),
+        (await stat(join(sandbox, ".growth-eng", "specs", "onboarding-flow"))).isDirectory(),
       ).toBe(true);
     });
 
@@ -146,8 +179,52 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
     });
   });
 
+  describe("ideas", () => {
+    it("creates a draft idea from the template under .growth-eng/ideas/ and returns a prompt to fill it out", async () => {
+      const result = await callTool(manager, "create_idea", {
+        slug: "Simplify Signup",
+      });
+      expect(result.isError).toBeUndefined();
+      expect(textOf(result)).toContain(".growth-eng/ideas/simplify-signup.md");
+      expect(textOf(result)).toContain("fill out the idea template");
+
+      const content = await readFile(
+        join(sandbox, ".growth-eng", "ideas", "simplify-signup.md"),
+        "utf8",
+      );
+      expect(content).toBe(KnowledgeBaseService.getExperimentTemplate());
+    });
+
+    it("refuses to create a duplicate idea", async () => {
+      const text = await expectToolError(manager, "create_idea", {
+        slug: "simplify-signup",
+      });
+      expect(text).toContain("already exists");
+    });
+
+    it("rejects an idea by moving it to .growth-eng/ideas/rejected/ and returns a prompt", async () => {
+      const result = await callTool(manager, "reject_idea", {
+        slug: "simplify-signup",
+      });
+      expect(result.isError).toBeUndefined();
+      expect(textOf(result)).toContain(".growth-eng/ideas/rejected/simplify-signup.md");
+      expect(textOf(result)).toContain("rejected and moved");
+      expect(existsSync(join(sandbox, ".growth-eng", "ideas", "simplify-signup.md"))).toBe(false);
+      expect(
+        existsSync(join(sandbox, ".growth-eng", "ideas", "rejected", "simplify-signup.md")),
+      ).toBe(true);
+    });
+
+    it("fails when rejecting an idea that does not exist", async () => {
+      const text = await expectToolError(manager, "reject_idea", {
+        slug: "nonexistent-idea",
+      });
+      expect(text).toContain('No idea named "nonexistent-idea.md"');
+    });
+  });
+
   describe("experiments", () => {
-    it("copies the template and fills the frontmatter from the arguments", async () => {
+    it("copies the template into .growth-eng/specs/<feature>/ and fills the frontmatter from the arguments", async () => {
       const result = await callTool(manager, "create_experiment", {
         feature: "Onboarding Flow",
         title: "Simplify signup",
@@ -156,12 +233,10 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
         status: "running",
         custom: { team: "growth", priority: 1 },
       });
-      expect(textOf(result)).toContain(
-        ".growth-eng/onboarding-flow/simplify-signup.md",
-      );
+      expect(textOf(result)).toContain(".growth-eng/specs/onboarding-flow/simplify-signup.md");
 
       const content = await readFile(
-        join(sandbox, ".growth-eng", "onboarding-flow", "simplify-signup.md"),
+        join(sandbox, ".growth-eng", "specs", "onboarding-flow", "simplify-signup.md"),
         "utf8",
       );
       expect(parseFrontmatter(content)).toEqual({
@@ -191,7 +266,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
         feature_flag_key: "referrals-nudge",
       });
       const content = await readFile(
-        join(sandbox, ".growth-eng", "onboarding-flow", "referrals-nudge.md"),
+        join(sandbox, ".growth-eng", "specs", "onboarding-flow", "referrals-nudge.md"),
         "utf8",
       );
       expect(parseFrontmatter(content)).toEqual({
@@ -212,7 +287,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
         title: "Phantom",
         feature_flag_key: "phantom-flag",
       });
-      expect(text).toContain(".growth-eng/ghost");
+      expect(text).toContain(".growth-eng/specs/ghost");
       expect(text).toContain("create_feature_folder");
     });
 
@@ -238,7 +313,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
         feature_flag_key: "invalid-flag",
       });
       expect(
-        existsSync(join(sandbox, ".growth-eng", "onboarding-flow", "invalid-flag.md")),
+        existsSync(join(sandbox, ".growth-eng", "specs", "onboarding-flow", "invalid-flag.md")),
       ).toBe(false);
     });
 
@@ -250,9 +325,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
         feature_flag_key: "one-page-checkout",
       });
       expect(
-        existsSync(
-          join(sandbox, ".growth-eng", "checkout", "one-page-checkout.md"),
-        ),
+        existsSync(join(sandbox, ".growth-eng", "specs", "checkout", "one-page-checkout.md")),
       ).toBe(true);
 
       // Same flag key, no start_date to disambiguate: error says what to pass.
@@ -273,12 +346,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
       expect(textOf(dated)).toContain("one-page-checkout-03-01-2026.md");
       expect(
         existsSync(
-          join(
-            sandbox,
-            ".growth-eng",
-            "checkout",
-            "one-page-checkout-03-01-2026.md",
-          ),
+          join(sandbox, ".growth-eng", "specs", "checkout", "one-page-checkout-03-01-2026.md"),
         ),
       ).toBe(true);
 
@@ -293,12 +361,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
     });
 
     it("patches frontmatter and leaves the body untouched", async () => {
-      const file = join(
-        sandbox,
-        ".growth-eng",
-        "onboarding-flow",
-        "referrals-nudge.md",
-      );
+      const file = join(sandbox, ".growth-eng", "specs", "onboarding-flow", "referrals-nudge.md");
       const before = await readFile(file, "utf8");
       const result = await callTool(manager, "update_experiment", {
         feature: "onboarding-flow",
@@ -367,10 +430,8 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
       // against exactly what the repository holds.
       expect(text).toContain(LintService.getDefaultRules().replace(/\n+$/, ""));
       // The scoring prompt: the formula, the glob, the template exclusion.
-      expect(text).toContain(
-        "Experiment Quality % = (rules followed / total rules) * 100",
-      );
-      expect(text).toContain(".growth-eng/**/*.md");
+      expect(text).toContain("Experiment Quality % = (rules followed / total rules) * 100");
+      expect(text).toContain(".growth-eng/specs/**/*.md");
       expect(text).toContain("_template_.md");
       expect(text).toContain("nothing to lint");
     });
@@ -392,9 +453,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
           "Loaded 1 lint rules from .growth-eng/lint-rules.json (0 error, 1 warning)",
         );
         expect(text).toContain("team/has-a-custom-rule");
-        expect(text).toContain(
-          "The spec must name the team that owns the experiment.",
-        );
+        expect(text).toContain("The spec must name the team that owns the experiment.");
         expect(text).not.toContain("hypothesis/is-falsifiable");
       } finally {
         await writeFile(rulesPath(), LintService.getDefaultRules());
@@ -466,6 +525,20 @@ describe("tools against an uninitialized knowledge base", () => {
     expect(text).toContain("init");
   });
 
+  it("create_idea tells the agent to run the init prompt", async () => {
+    const text = await expectToolError(manager, "create_idea", {
+      slug: "onboarding-idea",
+    });
+    expect(text).toContain("init");
+  });
+
+  it("reject_idea tells the agent to run the init prompt", async () => {
+    const text = await expectToolError(manager, "reject_idea", {
+      slug: "onboarding-idea",
+    });
+    expect(text).toContain("init");
+  });
+
   it("create_experiment tells the agent to run the init prompt", async () => {
     const text = await expectToolError(manager, "create_experiment", {
       feature: "onboarding",
@@ -500,7 +573,14 @@ describe("knowledge base without a template", () => {
     const result = await callTool(manager, "create_feature_folder", {
       name: "onboarding",
     });
-    expect(textOf(result)).toContain(".growth-eng/onboarding");
+    expect(textOf(result)).toContain(".growth-eng/specs/onboarding");
+  });
+
+  it("create_idea tells the agent to run the init prompt", async () => {
+    const text = await expectToolError(manager, "create_idea", {
+      slug: "no-template-idea",
+    });
+    expect(text).toContain("init");
   });
 
   it("create_experiment tells the agent to run the init prompt", async () => {

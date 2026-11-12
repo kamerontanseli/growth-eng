@@ -1,6 +1,6 @@
 # Growth Eng MCP
 
-Growth Eng MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server built with [FastMCP](https://github.com/punkpeye/fastmcp) and [Bun](https://bun.sh). It exposes tools and prompts that let an AI agent act as a growth engineer: ideating, shipping, and measuring experiments without human intervention.
+Growth Eng MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server built with [FastMCP](https://github.com/punkpeye/fastmcp) and [Bun](https://bun.sh). It exposes tools, prompts, and Agent Skills that let an AI agent act as a growth engineer: ideating, planning, shipping, linting, and visualizing experiments.
 
 Based on [mcpdotdirect/template-mcp-server](https://github.com/mcpdotdirect/template-mcp-server).
 
@@ -54,7 +54,33 @@ If you'd rather skip the npm layer, use `bunx` instead:
 }
 ```
 
-Once connected, the server's tools and the `init` prompt are available to the agent.
+Once connected, the server's tools and prompts (`init`, `generate-experiment-idea`, `plan-experiment`, and `hypothesis-tree`) are available to the agent.
+
+## Install the Skills
+
+This repository ships Agent Skills in `.agents/skills/` following the [dotagents](https://github.com/bgreenwell/dotagents) convention. Install them into your project or coding agent with [`skills`](https://github.com/vercel-labs/skills):
+
+```bash
+npx skills add kamerontanseli/growth-eng
+```
+
+Or install a specific skill:
+
+```bash
+npx skills add kamerontanseli/growth-eng --skill generate-experiment-idea
+npx skills add kamerontanseli/growth-eng --skill plan-experiment
+npx skills add kamerontanseli/growth-eng --skill hypothesis-tree
+```
+
+### Available skills & MCP prompts
+
+Every skill is also registered as an MCP prompt on the server so you can fetch and use it directly without installing the skills separately:
+
+| Skill / Prompt | Usage & What it does |
+|---|---|
+| `/generate-experiment-idea <size of test=xs s m l xl> <focus area> <user provided details>` | Reads all experiments in `.growth-eng/` to understand what worked and hasn't worked, reasons from first principles (research, causal mechanics, systems thinking) to propose an experiment, builds HTML or ASCII mockups of control and treatment changes, stages draft ideas in `.growth-eng/ideas/<experiment-slug>.md`, and moves rejected ideas to `.growth-eng/ideas/rejected/<experiment-slug>.md` |
+| `/plan-experiment` | Plans a new experiment by asking the user via the harness's `ask_question` tool for details needed to fill out `_template_.md` (or reuses `.growth-eng/ideas/<experiment-slug>.md` when called after `/generate-experiment-idea` and only asks for missing details), calls `create_experiment`, and writes the final experiment spec |
+| `/hypothesis-tree` | Scans the entirety of `.growth-eng/` and creates a hypothesis tree HTML artifact / diagram showing how experiments lead from one to another, highlighting winning hypotheses in green, losing ones in red, and inconclusive ones in grey |
 
 ### Run from source
 
@@ -87,9 +113,13 @@ The framework operates out of a `.growth-eng/` directory in your repository:
 .growth-eng/
 ├── _template_.md   # the canonical experiment template
 ├── lint-rules.json # the rules experiments are linted against
-├── _images/        # control/variant screenshots and designs
-└── <feature>/      # one folder per feature, e.g. onboarding/
-    └── <experiment>.md
+├── images/         # control/variant screenshots and designs
+├── ideas/          # drafting area for LLMs to write new experiment ideas
+│   ├── <experiment>.md       # draft idea files
+│   └── rejected/             # memory folder for rejected experiment specs ideas
+└── specs/
+    └── <feature>/            # one folder per feature, e.g. onboarding/
+        └── <experiment>.md
 ```
 
 Run the `init` prompt to bootstrap it. The MCP returns step-by-step instructions with the template and the default lint rules verbatim; the agent then creates the files, and never overwrites an existing `_template_.md` or `lint-rules.json`.
@@ -120,12 +150,12 @@ We believe <change> will <effect> because <insight>.
 
 ## Control
 <The existing experience all variants are measured against.>
-<Screenshot/design, if any: ../_images/<experiment>/control.png>
+<Screenshot/design, if any: ../../images/<experiment>/control.png>
 
 ## Variants
 | Variant | Description |
 |---|---|
-<Screenshots/designs, if any: ../_images/<experiment>/<variant>.png>
+<Screenshots/designs, if any: ../../images/<experiment>/<variant>.png>
 
 ## Sample size / MDE plan
 <Planned sample size, minimum detectable effect, power, alpha, runtime.>
@@ -156,8 +186,10 @@ The server's tools cover the writes the harness can't do safely on its own, plus
 
 | Tool | What it does |
 |---|---|
-| `create_feature_folder` | Creates `.growth-eng/<feature>/` |
-| `create_experiment` | Copies `_template_.md` into a feature folder, fills the frontmatter from the arguments, and returns the file path for the agent to fill in |
+| `create_feature_folder` | Creates `.growth-eng/specs/<feature>/` |
+| `create_idea` | Creates `.growth-eng/ideas/<experiment-slug>.md` from `_template_.md` and returns a prompt for the LLM to fill out the idea template |
+| `reject_idea` | Moves `.growth-eng/ideas/<experiment-slug>.md` to `.growth-eng/ideas/rejected/<experiment-slug>.md` and returns a prompt instructing the LLM that the idea has been rejected and moved to that path |
+| `create_experiment` | Copies `_template_.md` into `.growth-eng/specs/<feature>/<experiment>.md`, fills the frontmatter from the arguments, and returns the file path for the agent to fill in |
 | `update_experiment` | Patches experiment frontmatter (the body is untouched, the file is never renamed) |
 | `lint_experiments` | Returns the lint rules from `.growth-eng/lint-rules.json` plus the prompt to read every experiment, judge each rule, and score it |
 
@@ -165,11 +197,11 @@ The server's tools cover the writes the harness can't do safely on its own, plus
 
 Every tool checks its preconditions and, when one is missing, returns an error that tells the agent the next step: run the `init` prompt when the knowledge base, template, or lint rules are missing, or call `create_feature_folder` when the feature folder does not exist yet. `lint_experiments` also rejects a rules file that isn't valid JSON or holds a rule without a `lint_rule` description and a `severity` of `error` or `warning`, naming the offending rule.
 
-Screenshots and designs live in `.growth-eng/_images/<experiment>/` (for example control.png and variant-a.png), named after the experiment doc.
+Screenshots and designs live in `.growth-eng/images/<experiment>/` (for example `control.png` and `variant-a.png`), named after the experiment doc.
 
 ## Linting experiments
 
-`lint_experiments` scores every experiment doc against the rules in `.growth-eng/lint-rules.json`. It returns the loaded rules (with a count by severity) and the scoring prompt; the agent then reads every experiment at `.growth-eng/**/*.md` (excluding `_template_.md`) with its own file tools, judges each rule per experiment, and reports:
+`lint_experiments` scores every experiment doc against the rules in `.growth-eng/lint-rules.json`. It returns the loaded rules (with a count by severity) and the scoring prompt; the agent then reads every experiment at `.growth-eng/specs/**/*.md` (excluding `_template_.md` and drafts in `ideas/`) with its own file tools, judges each rule per experiment, and reports:
 
 - **Per experiment**: `Experiment Quality % = (rules followed / total rules) * 100`, with each broken rule named (id, severity, why it breaks) and what to change to follow it.
 - **Overall**: the average of the per-experiment scores.
@@ -213,7 +245,7 @@ bun test tests/evals.test.ts         # statistical eval suite
 
 Configuration lives in `.env` (see `.env.example`):
 
-- `OPENROUTER_API_KEY` — required by the LLM tests. The agent runs `openai/gpt-6-luna` on OpenRouter with medium reasoning; tests that need the LLM skip when the key is absent.
+- `OPENROUTER_API_KEY` — required by the LLM tests. The agent runs [`openrouter/particle-ai/particle-1`](https://docs.mcpjam.com/sdk/reference/llm-providers#openrouter) on OpenRouter; tests that need the LLM skip when the key is absent.
 
 Everything runs locally: no MCPJam account or key is involved. The statistical evals run N iterations per case (10 by default, override with `EVAL_ITERATIONS`) and gate on 90% aggregate tool-routing accuracy.
 
@@ -230,6 +262,11 @@ bun run build      # Build to ./build
 ## Project structure
 
 ```
+.agents/
+└── skills/               # Agent Skills (dotagents convention)
+    ├── generate-experiment-idea/
+    ├── plan-experiment/
+    └── hypothesis-tree/
 src/
 ├── index.ts              # stdio entrypoint
 ├── server/

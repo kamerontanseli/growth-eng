@@ -38,7 +38,7 @@ export function registerTools(server: FastMCP) {
   server.addTool({
     name: "create_feature_folder",
     description:
-      "Create a feature folder at .growth-eng/<name> to hold that " +
+      "Create a feature folder at .growth-eng/specs/<name> to hold that " +
       "feature's experiments. Requires the .growth-eng/ knowledge base to " +
       "be initialized (run the 'init' prompt first).",
     parameters: z.object({
@@ -52,11 +52,42 @@ export function registerTools(server: FastMCP) {
     execute: async ({ name }) => services.FeatureFolderService.create(name),
   });
 
+  // Ideas
+  server.addTool({
+    name: "create_idea",
+    description: lines(
+      "Create a draft experiment idea file at .growth-eng/ideas/<experiment-slug>.md by copying .growth-eng/_template_.md, and return a prompt for you to fill out the idea template.",
+      "Requires the .growth-eng/ knowledge base and .growth-eng/_template_.md to be initialized (run the 'init' prompt first).",
+    ),
+    parameters: z.object({
+      slug: z
+        .string()
+        .describe(
+          "Experiment idea slug, e.g. 'simplify-signup' (with or without the .md extension). Normalized to lowercase letters, numbers, and dashes.",
+        ),
+    }),
+    execute: async ({ slug }) => services.IdeaService.create(slug),
+  });
+
+  server.addTool({
+    name: "reject_idea",
+    description: lines(
+      "Reject a draft experiment idea by moving it from .growth-eng/ideas/<experiment-slug>.md to .growth-eng/ideas/rejected/<experiment-slug>.md, and return a prompt confirming that the idea has been rejected and moved to that path.",
+      "Requires the .growth-eng/ knowledge base to be initialized (run the 'init' prompt first).",
+    ),
+    parameters: z.object({
+      slug: z
+        .string()
+        .describe("Experiment idea slug in .growth-eng/ideas/, with or without the .md extension."),
+    }),
+    execute: async ({ slug }) => services.IdeaService.reject(slug),
+  });
+
   // Experiments
   server.addTool({
     name: "create_experiment",
     description: lines(
-      "Create an experiment document by copying .growth-eng/_template_.md into a feature folder, filling in the frontmatter from the arguments, and returning the file path for you to fill out the markdown content.",
+      "Create an experiment document by copying .growth-eng/_template_.md into a feature folder at .growth-eng/specs/<feature>/<experiment>.md, filling in the frontmatter from the arguments, and returning the file path for you to fill out the markdown content.",
       "The filename comes from the feature_flag_key; if it collides with an existing experiment, pass start_date to create a dated variant (<feature_flag_key>-MM-DD-YYYY.md).",
       "Requires the knowledge base to be initialized ('init' prompt) and the feature folder to exist (create_feature_folder).",
     ),
@@ -94,7 +125,7 @@ export function registerTools(server: FastMCP) {
   server.addTool({
     name: "update_experiment",
     description:
-      "Update the frontmatter of an experiment document. Only the fields " +
+      "Update the frontmatter of an experiment document in .growth-eng/specs/<feature>/<name>.md. Only the fields " +
       "you pass are changed; the markdown content is left untouched and the " +
       "file is never renamed.",
     parameters: z
@@ -129,7 +160,7 @@ export function registerTools(server: FastMCP) {
     name: "lint_experiments",
     description: lines(
       "Return the lint rules from .growth-eng/lint-rules.json together with the prompt to lint the knowledge base:",
-      "read every experiment at .growth-eng/**/*.md, judge each rule per experiment, and score each one",
+      "read every experiment at .growth-eng/specs/**/*.md (or .growth-eng/**/*.md), judge each rule per experiment, and score each one",
       "Experiment Quality % = (rules followed / total rules) * 100.",
       "Requires the knowledge base to be initialized ('init' prompt).",
     ),

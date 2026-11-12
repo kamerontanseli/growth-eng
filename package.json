@@ -27,7 +27,6 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@ai-sdk/openai": "4.0.91",
     "@mcpjam/sdk": "^10.3.0",
     "@types/bun": "latest",
     "@types/cors": "^2.8.17",

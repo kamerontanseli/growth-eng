@@ -7,7 +7,6 @@ import { KnowledgeBaseService } from "../src/core/services/knowledge-base-servic
 import { LintService } from "../src/core/services/lint-service.js";
 import {
   MODEL,
-  REASONING_EFFORT,
   SERVER_ID,
   createAgent,
   hasOpenRouterKey,
@@ -19,7 +18,9 @@ import {
 const TOOL_NAMES = [
   "create_experiment",
   "create_feature_folder",
+  "create_idea",
   "lint_experiments",
+  "reject_idea",
   "update_experiment",
 ];
 
@@ -27,99 +28,120 @@ let manager: MCPClientManager;
 let agent: HostRunner;
 let sandbox: string;
 
-describe.skipIf(!hasOpenRouterKey())(
-  `${MODEL} tool selection (${REASONING_EFFORT} reasoning)`,
-  () => {
-    beforeAll(async () => {
-      // The agent's tool calls mutate the working directory, so the server
-      // is booted in a throwaway sandbox holding an initialized knowledge
-      // base with an 'onboarding' feature folder and one experiment to update.
-      sandbox = await mkdtemp(join(tmpdir(), "growth-eng-agent-"));
-      await mkdir(join(sandbox, ".growth-eng", "_images"), { recursive: true });
-      await writeFile(
-        join(sandbox, ".growth-eng", "_template_.md"),
-        KnowledgeBaseService.getExperimentTemplate(),
-      );
-      await writeFile(
-        join(sandbox, ".growth-eng", "lint-rules.json"),
-        LintService.getDefaultRules(),
-      );
-      await mkdir(join(sandbox, ".growth-eng", "onboarding"));
-      manager = await startServerIn(sandbox);
-      await manager.executeTool(SERVER_ID, "create_experiment", {
-        feature: "onboarding",
-        title: "Referrals nudge",
-        feature_flag_key: "referrals-nudge",
-      });
-      agent = await createAgent(manager);
-    }, 60_000);
-
-    afterAll(async () => {
-      await stopServer(manager);
-      await rm(sandbox, { recursive: true, force: true });
+describe.skipIf(!hasOpenRouterKey())(`${MODEL} tool selection`, () => {
+  beforeAll(async () => {
+    // The agent's tool calls mutate the working directory, so the server
+    // is booted in a throwaway sandbox holding an initialized knowledge
+    // base with an 'onboarding' feature folder, one experiment to update,
+    // and one draft idea to reject.
+    sandbox = await mkdtemp(join(tmpdir(), "growth-eng-agent-"));
+    await mkdir(join(sandbox, ".growth-eng", "images"), { recursive: true });
+    await mkdir(join(sandbox, ".growth-eng", "ideas", "rejected"), {
+      recursive: true,
     });
+    await mkdir(join(sandbox, ".growth-eng", "specs", "onboarding"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(sandbox, ".growth-eng", "_template_.md"),
+      KnowledgeBaseService.getExperimentTemplate(),
+    );
+    await writeFile(join(sandbox, ".growth-eng", "lint-rules.json"), LintService.getDefaultRules());
+    manager = await startServerIn(sandbox);
+    await manager.executeTool(SERVER_ID, "create_experiment", {
+      feature: "onboarding",
+      title: "Referrals nudge",
+      feature_flag_key: "referrals-nudge",
+    });
+    await manager.executeTool(SERVER_ID, "create_idea", {
+      slug: "bad-checkout-idea",
+    });
+    agent = await createAgent(manager);
+  }, 60_000);
 
-    it("calls create_feature_folder with the right name", async () => {
-      const result = await agent.run(
-        "Create a feature folder called checkout for experiments to live in.",
-      );
+  afterAll(async () => {
+    await stopServer(manager);
+    await rm(sandbox, { recursive: true, force: true });
+  });
 
-      expect(result.hasError()).toBe(false);
-      expect(result.hasToolCall("create_feature_folder")).toBe(true);
-      expect(result.getToolArguments("create_feature_folder")).toMatchObject({
-        name: "checkout",
-      });
-    }, 120_000);
+  it("calls create_feature_folder with the right name", async () => {
+    const result = await agent.run(
+      "Create a feature folder called checkout for experiments to live in.",
+    );
 
-    it("calls create_experiment with the right arguments", async () => {
-      const result = await agent.run(
-        'Create an experiment titled "Simplify signup form" with feature ' +
-          'flag key "simplify-signup" in the onboarding feature.',
-      );
+    expect(result.hasError()).toBe(false);
+    expect(result.hasToolCall("create_feature_folder")).toBe(true);
+    expect(result.getToolArguments("create_feature_folder")).toMatchObject({
+      name: "checkout",
+    });
+  }, 120_000);
 
-      expect(result.hasError()).toBe(false);
-      expect(result.hasToolCall("create_experiment")).toBe(true);
-      expect(result.getToolArguments("create_experiment")).toMatchObject({
-        feature: "onboarding",
-        title: "Simplify signup form",
-        feature_flag_key: "simplify-signup",
-      });
-    }, 120_000);
+  it("calls create_idea with the right slug", async () => {
+    const result = await agent.run(
+      'Create a new draft experiment idea with slug "social-proof-banner".',
+    );
 
-    it("calls update_experiment with the right arguments", async () => {
-      const result = await agent.run(
-        'Mark the "referrals-nudge" experiment in the onboarding feature ' +
-          'as ended with conclusion "won".',
-      );
+    expect(result.hasError()).toBe(false);
+    expect(result.hasToolCall("create_idea")).toBe(true);
+    expect(result.getToolArguments("create_idea")).toMatchObject({
+      slug: "social-proof-banner",
+    });
+  }, 120_000);
 
-      expect(result.hasError()).toBe(false);
-      expect(result.hasToolCall("update_experiment")).toBe(true);
-      expect(result.getToolArguments("update_experiment")).toMatchObject({
-        feature: "onboarding",
-        name: "referrals-nudge",
-        status: "ended",
-        conclusion: "won",
-      });
-    }, 120_000);
+  it("calls reject_idea with the right slug", async () => {
+    const result = await agent.run('Reject the draft experiment idea "bad-checkout-idea".');
 
-    it("calls lint_experiments when asked to lint the experiments", async () => {
-      const result = await agent.run(
-        "Lint the experiments in the .growth-eng/ knowledge base.",
-      );
+    expect(result.hasError()).toBe(false);
+    expect(result.hasToolCall("reject_idea")).toBe(true);
+    expect(result.getToolArguments("reject_idea")).toMatchObject({
+      slug: "bad-checkout-idea",
+    });
+  }, 120_000);
 
-      expect(result.hasError()).toBe(false);
-      expect(result.hasToolCall("lint_experiments")).toBe(true);
-    }, 120_000);
+  it("calls create_experiment with the right arguments", async () => {
+    const result = await agent.run(
+      'Create an experiment titled "Simplify signup form" with feature ' +
+        'flag key "simplify-signup" in the onboarding feature.',
+    );
 
-    it("does not call tools for an unrelated question", async () => {
-      const result = await agent.run(
-        "What is the capital of France? Answer directly.",
-      );
+    expect(result.hasError()).toBe(false);
+    expect(result.hasToolCall("create_experiment")).toBe(true);
+    expect(result.getToolArguments("create_experiment")).toMatchObject({
+      feature: "onboarding",
+      title: "Simplify signup form",
+      feature_flag_key: "simplify-signup",
+    });
+  }, 120_000);
 
-      for (const tool of TOOL_NAMES) {
-        expect(result.hasToolCall(tool)).toBe(false);
-      }
-      expect(result.text.toLowerCase()).toContain("paris");
-    }, 120_000);
-  },
-);
+  it("calls update_experiment with the right arguments", async () => {
+    const result = await agent.run(
+      'Mark the "referrals-nudge" experiment in the onboarding feature ' +
+        'as ended with conclusion "won".',
+    );
+
+    expect(result.hasError()).toBe(false);
+    expect(result.hasToolCall("update_experiment")).toBe(true);
+    expect(result.getToolArguments("update_experiment")).toMatchObject({
+      feature: "onboarding",
+      name: "referrals-nudge",
+      status: "ended",
+      conclusion: "won",
+    });
+  }, 120_000);
+
+  it("calls lint_experiments when asked to lint the experiments", async () => {
+    const result = await agent.run("Lint the experiments in the .growth-eng/ knowledge base.");
+
+    expect(result.hasError()).toBe(false);
+    expect(result.hasToolCall("lint_experiments")).toBe(true);
+  }, 120_000);
+
+  it("does not call tools for an unrelated question", async () => {
+    const result = await agent.run("What is the capital of France? Answer directly.");
+
+    for (const tool of TOOL_NAMES) {
+      expect(result.hasToolCall(tool)).toBe(false);
+    }
+    expect(result.text.toLowerCase()).toContain("paris");
+  }, 120_000);
+});
