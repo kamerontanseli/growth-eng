@@ -31,7 +31,6 @@
     "@mcpjam/sdk": "^10.3.0",
     "@types/bun": "latest",
     "@types/cors": "^2.8.17",
-    "@types/node": "^20.19.43",
     "knip": "^6.44.2",
     "oxfmt": "^0.77.0",
     "oxlint": "^1.92.0",
