@@ -15,7 +15,7 @@
     "dev": "bun --watch src/index.ts",
     "start:http": "bun run src/server/http-server.ts",
     "dev:http": "bun --watch src/server/http-server.ts",
-    "inspector": "npx @modelcontextprotocol/inspector bun run ./src/index.ts",
+    "inspector": "bunx @modelcontextprotocol/inspector bun run ./src/index.ts",
     "test": "bun test",
     "test:tools": "bun test tests/tools.test.ts",
     "test:agent": "bun test tests/agent.test.ts",
