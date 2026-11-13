@@ -424,7 +424,7 @@ describe("growth-eng MCP server (direct execution, no LLM)", () => {
       expect(result.isError).not.toBe(true);
       const text = textOf(result);
       expect(text).toContain(
-        "Loaded 24 lint rules from .growth-eng/lint-rules.json (19 error, 5 warning)",
+        "Loaded 27 lint rules from .growth-eng/lint-rules.json (21 error, 6 warning)",
       );
       // The rules ride in the result verbatim, so the calling LLM judges
       // against exactly what the repository holds.

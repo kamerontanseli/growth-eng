@@ -106,6 +106,11 @@ const DEFAULT_LINT_RULES = `{
     "bad_example": "Traffic will be ramped up gradually as confidence grows.",
     "good_example": "Traffic runs at 50/50 between control and variant for the full test."
   },
+  "randomization/declares-exclusion-group": {
+    "severity": "error",
+    "lint_rule": "The spec must name the mutual-exclusion group or layer the experiment belongs to, so it cannot overlap with conflicting tests.",
+    "good_example": "This experiment runs in the 'checkout-layout' layer, mutually exclusive with any other checkout-layout experiment."
+  },
   "power/has-a-sample-size-calculation": {
     "severity": "error",
     "lint_rule": "The spec must include a sample size calculation for the primary metric at the stated minimum detectable effect. A target picked by feel, with no calculation behind it, breaks this rule.",
@@ -159,6 +164,18 @@ const DEFAULT_LINT_RULES = `{
     "lint_rule": "The spec must say how the change is turned off if something goes wrong and who has the authority to do it. A spec with no kill switch and no named owner breaks this rule.",
     "bad_example": "If something goes wrong after launch, the team will look into it.",
     "good_example": "The change ships behind the checkout_v2 flag, and the on-call engineer can turn the flag off without a deploy, with the product lead holding the authority to order the rollback."
+  },
+  "rollout/has-progressive-ramp": {
+    "severity": "warning",
+    "lint_rule": "If the change is high-risk, the spec must declare a staged ramp (e.g., 1% → 5% → 25% → 50%) with guardrail review at each stage.",
+    "good_example": "Traffic ramps 1% → 5% → 25% → 50%, with guardrail metrics reviewed at each stage; any breach halts the ramp."
+  },
+
+  "monitoring/has-srm-check": {
+    "severity": "error",
+    "lint_rule": "The spec must declare the SRM check (chi-squared on assignment counts) and the p-value threshold that triggers auto-halt.",
+    "bad_example": "We will monitor traffic split during the test.",
+    "good_example": "A chi-squared SRM check runs hourly; if p < 0.001, the experiment auto-halts and the on-call is paged."
   }
 }`;
 
@@ -267,7 +284,7 @@ const LINT_PROMPT = lines(
 export class LintService {
   /**
    * The default lint ruleset (.growth-eng/lint-rules.json)
-   * @returns The default rules as JSON text, 24 rules (19 error, 5 warning)
+   * @returns The default rules as JSON text, 27 rules (21 error, 6 warning)
    */
   public static getDefaultRules(): string {
     return DEFAULT_LINT_RULES;

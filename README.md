@@ -229,7 +229,7 @@ The rules file is a JSON object keyed by rule id. Each rule carries a `severity`
 }
 ```
 
-To set up your own rules, edit `.growth-eng/lint-rules.json` in your repository: add, edit, or remove rules, and commit the file alongside the rest of the knowledge base. Re-running the `init` prompt never overwrites it. To restore the default ruleset (24 rules: 19 error, 5 warning, covering hypothesis, metrics, guardrails, variants, audience, randomization, power, duration, analysis, decision, and rollout), delete the file and run the `init` prompt again.
+To set up your own rules, edit `.growth-eng/lint-rules.json` in your repository: add, edit, or remove rules, and commit the file alongside the rest of the knowledge base. Re-running the `init` prompt never overwrites it. To restore the default ruleset (27 rules: 21 error, 6 warning, covering hypothesis, metrics, guardrails, variants, audience, randomization, power, duration, analysis, decision, rollout, and monitoring), delete the file and run the `init` prompt again.
 
 ## Testing
 
